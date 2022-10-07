@@ -21,6 +21,9 @@ public final class HideyLink extends JavaPlugin {
 
     @Override
     public void onEnable() {
+        // Saving default config
+        saveDefaultConfig();
+
         // Plugin startup logic
         PluginManager pm = getServer().getPluginManager();
         ServicesManager sm = getServer().getServicesManager();

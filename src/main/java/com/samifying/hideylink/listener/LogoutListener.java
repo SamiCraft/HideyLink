@@ -14,7 +14,7 @@ public class LogoutListener implements Listener {
     private final HideyLink plugin;
 
     @EventHandler(priority = EventPriority.HIGHEST)
-    public void handlePlayerQuit(PlayerQuitEvent event) {
+    public void onPlayerQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
         plugin.getLogger().info("Removing cache for " + player.getName());
 
