@@ -65,7 +65,7 @@ public class LoginListener implements Listener {
             String supporter = config.getString("auth.supporter");
 
             // HTTP Request to backend
-            String url = "https://link.samifying.com/" + guild + "/" + role + "/" + uuid
+            String url = "https://link.samifying.com/api/user/" + guild + "/" + role + "/" + uuid
                     + "?moderator=" + moderator + "&supporter=" + supporter;
             HttpRequest req = HttpRequest.newBuilder()
                     .uri(URI.create(url))
