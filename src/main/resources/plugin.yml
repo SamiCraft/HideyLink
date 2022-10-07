@@ -1,0 +1,8 @@
+name: HideyLink
+version: '${project.version}'
+main: com.samifying.hideylink.HideyLink
+api-version: 1.19
+load: STARTUP
+depend: [ LuckPerms ]
+authors: [ Pequla ]
+description: Whitelisting and permission management plugin
