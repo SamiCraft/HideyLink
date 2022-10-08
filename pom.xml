@@ -95,6 +95,13 @@
         </dependency>
     </dependencies>
 
+    <distributionManagement>
+        <repository>
+            <id>pequla-repo</id>
+            <url>https://maven.pequla.com/releases</url>
+        </repository>
+    </distributionManagement>
+
     <developers>
         <developer>
             <name>Pequla</name>
