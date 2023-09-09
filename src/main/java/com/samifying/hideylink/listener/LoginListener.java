@@ -9,30 +9,30 @@ import net.luckperms.api.LuckPerms;
 import net.luckperms.api.model.user.User;
 import net.luckperms.api.model.user.UserManager;
 import net.luckperms.api.node.Node;
+import net.luckperms.api.node.NodeEqualityPredicate;
 import org.bukkit.configuration.file.FileConfiguration;
-import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
-import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.player.PlayerLoginEvent;
+import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
 
 public class LoginListener implements Listener {
 
     private final HideyLink plugin;
-    private final LuckPerms perms;
+    private final UserManager manager;
     private final HttpClient client;
     private final ObjectMapper mapper;
 
     public LoginListener(HideyLink plugin, LuckPerms perms) {
         this.plugin = plugin;
-        this.perms = perms;
+        this.manager = perms.getUserManager();
 
         // Registering http client
         this.client = HttpClient.newBuilder()
@@ -45,19 +45,18 @@ public class LoginListener implements Listener {
         mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
-    @EventHandler(priority = EventPriority.LOWEST)
-    public void onPlayerLogin(PlayerLoginEvent event) {
+    @EventHandler
+    public void onAsyncPlayerPreLogin(AsyncPlayerPreLoginEvent event) {
         try {
-            Player player = event.getPlayer();
+            UUID uuid = event.getUniqueId();
 
             // Skip if the player is banned
             if (plugin.getServer().getBannedPlayers().stream().anyMatch(p ->
-                    p.getUniqueId().equals(player.getUniqueId()))) {
+                    p.getUniqueId().equals(uuid))) {
                 return;
             }
 
             // Retrieving properties
-            String uuid = player.getUniqueId().toString();
             FileConfiguration config = plugin.getConfig();
             String guild = config.getString("auth.guild");
             String role = config.getString("auth.role");
@@ -79,60 +78,55 @@ public class LoginListener implements Listener {
                 DataModel model = mapper.readValue(rsp.body(), DataModel.class);
 
                 // Managing the permissions
-                new Thread(() -> {
-                    managePermission(player, model.isSupporter(), "group.supporter");
-                    managePermission(player, model.isModerator(), "group.moderator");
-                }, "PermissionManagerThread").start();
+                managePermission(uuid, event.getName(), model.isSupporter(), "group.supporter");
+                managePermission(uuid, event.getName(), model.isModerator(), "group.moderator");
 
                 // Saving data to cache
-                plugin.getPlayers().put(player.getUniqueId(), model);
-                plugin.getLogger().info("Player " + player.getName() + " authenticated as " + model.getName());
+                plugin.getPlayers().put(uuid, model);
+                plugin.getLogger().info("Player " + event.getName() + " authenticated as " + model.getName());
                 return;
             }
 
             // Backend exception
             if (rsp.statusCode() == 500) {
                 ErrorModel model = mapper.readValue(rsp.body(), ErrorModel.class);
-                plugin.getLogger().info("Player " + player.getName() + " was rejected");
+                plugin.getLogger().info("Player " + event.getName() + " was rejected");
                 throw new RuntimeException(model.getMessage());
             }
 
             // General exception
             throw new RuntimeException("Authorization failed");
         } catch (Exception e) {
-            event.disallow(PlayerLoginEvent.Result.KICK_OTHER,
+            event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER,
                     e.getClass().getSimpleName() + ": " + e.getMessage());
         }
     }
 
-    private void managePermission(Player player, boolean isAllowed, String group) {
+    private void managePermission(UUID uuid, String name, boolean isAllowed, String group) {
         Logger logger = plugin.getLogger();
-        UserManager manager = perms.getUserManager();
 
-        // Player has the group
-        if (player.hasPermission(group)) {
-            if (!isAllowed) {
-                // Player is not allowed to have that permission
-                CompletableFuture<User> future = manager.loadUser(player.getUniqueId());
-                future.thenAcceptAsync(user -> {
+        CompletableFuture<User> future = manager.loadUser(uuid);
+        future.thenAcceptAsync(user -> {
+            Node groupNode = Node.builder(group).build();
+
+            // Player has the group
+            if (user.data().contains(groupNode, NodeEqualityPredicate.EXACT).asBoolean()) {
+                if (!isAllowed) {
                     user.data().remove(Node.builder(group).build());
                     manager.saveUser(user);
-                });
-                logger.info("Group permission " + group + " was removed from " + player.getName());
+                    logger.info("Group permission " + group + " was removed from " + name);
+                }
+
+                // Player is allowed and has the group
+                return;
             }
 
-            // Player is allowed and has the group
-            return;
-        }
-
-        // Player is allowed but does not have the group
-        if (isAllowed) {
-            CompletableFuture<User> future = manager.loadUser(player.getUniqueId());
-            future.thenAcceptAsync(user -> {
+            // Player is allowed but does not have the group
+            if (isAllowed) {
                 user.data().add(Node.builder(group).build());
                 manager.saveUser(user);
-            });
-            logger.info("Group permission " + group + " was added to " + player.getName());
-        }
+                logger.info("Group permission " + group + " was added to " + name);
+            }
+        });
     }
 }
